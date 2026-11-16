@@ -56,7 +56,8 @@ product. Do NOT roll custom crypto; standard AES only.
   held until the next block is accepted. T advances by alpha lazily at the next
   block accept (saves a 128-bit output register). Verified by `verify/xts_test.py`:
   IEEE-1619 #1/#2 enc+dec + 12 random sectors (1..32 blocks, full 128-bit seq)
-  vs `xts_crypt`. NOTE for TODO #3: T is key-derived state — zeroize it on TAMPER too.
+  vs `xts_crypt`, plus a back-to-back test that starts each block on the cycle
+  `busy` drops (the tweak result is bypassed into a block accepted that cycle).
 - `make -C verify` runs every suite (`TOP=aes|xts sim` for one) and FAILS if any
   results_*.xml has a `<failure>` (cocotb's make alone exits 0 on test failure).
 - Local sim: WSL kali-linux, `source ~/.venv-cocotb/bin/activate` (cocotb 1.9.2,
@@ -71,7 +72,11 @@ product. Do NOT roll custom crypto; standard AES only.
    against a simulated flash model (BFM) first; validate against a real W25Q on
    FPGA before tapeout.
 3. **Key register + TAMPER zeroize**: load path + synchronous 1-clock clear of
-   both keys on the TAMPER pin.
+   both keys on the TAMPER pin. Clearing the key registers is NOT enough: the
+   aes128 core keeps `rk` after each op (== Key1 after a decrypt; Key2's round-10
+   key after a tweak, which inverts to Key2), plus `st`/`din_q`/`dout` and the
+   xts128 tweak T. TAMPER must also reset the whole xts128 instance, e.g.
+   `.rst_n(rst_n & ~tamper)`, and the test must check `rk`/T are zero after it.
 4. **Top `tt_um_cryptkill`**: pin/host protocol (shift key/data in over `ui`,
    SPI on `uio`, status on `uo`, TAMPER on a `ui` bit), wire the blocks, set
    `info.yaml` `tiles: 2x2` + pinout + source_files, write `docs/info.md`.

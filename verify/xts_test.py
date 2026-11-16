@@ -4,7 +4,7 @@ model ../model/aes_xts_ref.py::xts_crypt."""
 import os, sys, random
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import RisingEdge
+from cocotb.triggers import RisingEdge, FallingEdge
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "model"))
 from aes_xts_ref import xts_crypt  # noqa: E402
@@ -90,3 +90,46 @@ async def test_xts_random(dut):
         assert back == pt, f"rand #{i} dec ({nblk} blk)"
         assert back == xts_crypt(ct, k1, k2, seq, encrypt=False)
     dut._log.info("XTS: 12 random sectors (1..32 blocks) enc+dec vs model PASS")
+
+async def run_sector_greedy(dut, data, key1, key2, seq, encrypt):
+    """Like a real controller: start each request on the first cycle busy is low,
+    i.e. on the same cycle the previous done/tweak lands. Drives on falling edges."""
+    dut.key1.value = int.from_bytes(key1, "big")
+    dut.key2.value = int.from_bytes(key2, "big")
+    dut.sector.value = seq
+    dut.dec.value = 0 if encrypt else 1
+    await FallingEdge(dut.clk)
+    dut.tweak_start.value = 1
+    await FallingEdge(dut.clk)
+    dut.tweak_start.value = 0
+    blocks = [data[j:j+16] for j in range(0, len(data), 16)]
+    out, sent = b"", 0
+    for _ in range(64 * (len(blocks) + 1)):
+        if int(dut.done.value) == 1:
+            out += int(dut.dout.value).to_bytes(16, "big")
+            if len(out) == len(data):
+                return out
+        if int(dut.busy.value) == 0 and sent < len(blocks) and int(dut.blk_start.value) == 0:
+            dut.din.value = int.from_bytes(blocks[sent], "big")
+            dut.blk_start.value = 1
+            sent += 1
+        else:
+            dut.blk_start.value = 0
+        await FallingEdge(dut.clk)
+    raise AssertionError("timeout in greedy sector")
+
+@cocotb.test()
+async def test_xts_back_to_back(dut):
+    await reset(dut)
+    rnd = random.Random(0xB2B)
+    k1, k2, seq, pt, ct = IEEE_VECTORS[1]
+    k1, k2, pt, ct = map(bytes.fromhex, (k1, k2, pt, ct))
+    assert await run_sector_greedy(dut, pt, k1, k2, seq, True) == ct, "IEEE vec#2 greedy enc"
+    for i in range(4):
+        k1, k2 = (bytes(rnd.randrange(256) for _ in range(16)) for _ in range(2))
+        seq = rnd.getrandbits(128)
+        pt = bytes(rnd.randrange(256) for _ in range(16 * 8))
+        exp = xts_crypt(pt, k1, k2, seq)
+        assert await run_sector_greedy(dut, pt, k1, k2, seq, True) == exp, f"greedy enc #{i}"
+        assert await run_sector_greedy(dut, exp, k1, k2, seq, False) == pt, f"greedy dec #{i}"
+    dut._log.info("XTS: back-to-back (start on the cycle busy drops) enc+dec PASS")

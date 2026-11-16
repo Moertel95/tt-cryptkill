@@ -41,7 +41,9 @@ module xts128 (
   wire req    = tweak_start | blk_start;
   wire accept = req & ~req_d & ~busy;
   wire is_tw  = tweak_start;                     // tweak wins if both asserted
-  wire [127:0] T_cur = adv ? alpha(T) : T;       // tweak for the block being accepted
+  // tweak arriving this cycle must be visible to a block accepted the same cycle
+  wire [127:0] T_new = (a_done & ~blk_phase) ? a_dout : T;
+  wire [127:0] T_cur = adv ? alpha(T) : T_new;   // tweak for the block being accepted
 
   aes128 core (
     .clk(clk), .rst_n(rst_n), .start(accept),
