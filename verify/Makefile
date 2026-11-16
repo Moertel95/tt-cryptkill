@@ -8,6 +8,8 @@ ifeq ($(TOP),aes)
 VERILOG_SOURCES += $(PWD)/../src/aes128.v $(PWD)/aes_tb.v
 else ifeq ($(TOP),xts)
 VERILOG_SOURCES += $(PWD)/../src/aes128.v $(PWD)/../src/xts128.v $(PWD)/xts_tb.v
+else ifeq ($(TOP),spi)
+VERILOG_SOURCES += $(PWD)/../src/spi_nor.v $(PWD)/spi_tb.v
 endif
 TOPLEVEL = $(TOP)_tb
 MODULE = $(TOP)_test
@@ -21,6 +23,7 @@ regress:
 	rm -f results_*.xml
 	$(MAKE) TOP=aes sim
 	$(MAKE) TOP=xts sim
+	$(MAKE) TOP=spi sim
 	# cocotb's make exits 0 on test failure; fail the build from the results
 	! grep -l "<failure" results_*.xml
 

@@ -58,6 +58,21 @@ product. Do NOT roll custom crypto; standard AES only.
   IEEE-1619 #1/#2 enc+dec + 12 random sectors (1..32 blocks, full 128-bit seq)
   vs `xts_crypt`, plus a back-to-back test that starts each block on the cycle
   `busy` drops (the tweak result is bypassed into a block accepted that cycle).
+- DONE: `src/spi_nor.v` — SPI-NOR (W25Q) master, single-bit mode 0, SCK=clk/2.
+  Ops: READ(03), PROGRAM(06|02+data|05 poll), ERASE4K(06|20|05 poll), NOP.
+  Byte streams: wdata/wvalid/wready (wready pulses the cycle after the byte is
+  taken), rdata/rvalid/rready (held). CS high >= 9 clk between commands.
+  Caller must keep a PROGRAM inside one 256 B page (top-level check). No WIP
+  timeout. Verified by `verify/spi_test.py` against a Python W25Q model that also
+  checks the wire protocol (mode 0, byte-aligned CS, tSHSL, MOSI setup/hold, WEL,
+  nothing but 05 while busy, MISO 'x' until tCLQV): wire-format KAT, 60 random
+  erase/program/read ops with backpressure + full readback, edge cases
+  (len=0, NOP, held start, long WIP, back-to-back). Mutation-checked: 7 injected
+  RTL bugs all caught. NOT verified: real pad/board timing (MISO round trip must
+  fit in one clk; keep clk <= ~25 MHz until measured), real W25Q on FPGA.
+- AREA WARNING (Yosys generic synth, not sky130): xts128+aes128 ~= 27.9k cells /
+  652 flops; spi_nor ~= 500 cells / 88 flops. The 16+16+4 parallel S-box AES core
+  is far beyond a 2x2 budget -> needs an architecture decision before TODO #4.
 - `make -C verify` runs every suite (`TOP=aes|xts sim` for one) and FAILS if any
   results_*.xml has a `<failure>` (cocotb's make alone exits 0 on test failure).
 - Local sim: WSL kali-linux, `source ~/.venv-cocotb/bin/activate` (cocotb 1.9.2,
@@ -67,7 +82,7 @@ product. Do NOT roll custom crypto; standard AES only.
 1. ~~**XTS wrapper**~~ DONE. Was: over `aes128`: Key2 tweak-encrypt of the sector number,
    GF(2^128) x-alpha per block, Key1 data encrypt/decrypt, XOR. cocotb test vs
    `model/aes_xts_ref.py::xts_crypt` and the two IEEE-1619 vectors.
-2. **SPI-NOR master controller** (W25Q): read/write/erase commands. Highest
+2. ~~**SPI-NOR master controller**~~ DONE (W25Q): read/write/erase commands. Highest
    risk = command/timing correctness burned into irreversible silicon. Test
    against a simulated flash model (BFM) first; validate against a real W25Q on
    FPGA before tapeout.
