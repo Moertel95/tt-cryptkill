@@ -50,9 +50,20 @@ product. Do NOT roll custom crypto; standard AES only.
   `tools/gen_aes.py` (regenerate with `cd tools && python3 gen_aes.py` — needs
   `model/aes_xts_ref.py` importable). **CI-verified**: FIPS KAT enc+dec + 32
   random enc/dec vectors vs the model (`aes-core-test` workflow = green).
+- DONE: `src/xts128.v` — AES-128-XTS wrapper sharing one `aes128` core.
+  `tweak_start` computes T = AES_enc(key2, bswap(sector)); each `blk_start`
+  runs one block (`dec` selects direction), `done` pulses, `dout = aes_dout ^ T`
+  held until the next block is accepted. T advances by alpha lazily at the next
+  block accept (saves a 128-bit output register). Verified by `verify/xts_test.py`:
+  IEEE-1619 #1/#2 enc+dec + 12 random sectors (1..32 blocks, full 128-bit seq)
+  vs `xts_crypt`. NOTE for TODO #3: T is key-derived state — zeroize it on TAMPER too.
+- `make -C verify` runs every suite (`TOP=aes|xts sim` for one) and FAILS if any
+  results_*.xml has a `<failure>` (cocotb's make alone exits 0 on test failure).
+- Local sim: WSL kali-linux, `source ~/.venv-cocotb/bin/activate` (cocotb 1.9.2,
+  Icarus 13), then `make -C verify` from the repo under /mnt/c/.
 
 ## TODO (next, in order — build one block, let CI verify, then next)
-1. **XTS wrapper** over `aes128`: Key2 tweak-encrypt of the sector number,
+1. ~~**XTS wrapper**~~ DONE. Was: over `aes128`: Key2 tweak-encrypt of the sector number,
    GF(2^128) x-alpha per block, Key1 data encrypt/decrypt, XOR. cocotb test vs
    `model/aes_xts_ref.py::xts_crypt` and the two IEEE-1619 vectors.
 2. **SPI-NOR master controller** (W25Q): read/write/erase commands. Highest
