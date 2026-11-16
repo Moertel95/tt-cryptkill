@@ -1,0 +1,18 @@
+name: aes-core-test
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Icarus Verilog
+        run: sudo apt-get update && sudo apt-get install -y iverilog
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install cocotb
+        run: pip install "cocotb==1.9.2"
+      - name: Run AES core KAT + random tests
+        run: make -C verify
