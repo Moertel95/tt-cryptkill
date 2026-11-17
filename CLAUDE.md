@@ -144,8 +144,15 @@ product. Do NOT roll custom crypto; standard AES only.
   `verify/flash_model.py`.
 - `make -C verify` runs every suite (`TOP=aes|xts sim` for one) and FAILS if any
   results_*.xml has a `<failure>` (cocotb's make alone exits 0 on test failure).
-- Local sim: WSL kali-linux, `source ~/.venv-cocotb/bin/activate` (cocotb 1.9.2,
-  Icarus 13), then `make -C verify` from the repo under /mnt/c/.
+- Local sim: WSL Ubuntu 26.04 (Python 3.14, Icarus 12), `source
+  ~/.venv-cocotb/bin/activate` (cocotb 1.9.2), then `make -C verify` from the repo
+  under /mnt/c/. Run sims one at a time (`.wslconfig` memory=8GB).
+- Every cocotb test has `timeout_time` (~4-5x its measured sim time), so a missing
+  `done` fails as a test instead of hanging.
+- Mutation check: `verify/mutate.sh [name-regex]` (X0 stale block-0 tweak, E1-E8
+  erase, A1, S1-S5 SPI with cocotb 1.9; T1-T10 top with cocotb 2). Each mutant runs
+  under a wall-clock `timeout` (LIMIT=180 s, x2 for spi); a hung sim counts as
+  killed. Exits non-zero if any mutant survives, does not apply or fails to build.
 
 ## TODO (next, in order — build one block, let CI verify, then next)
 1. ~~**XTS wrapper**~~ DONE. Was: over `aes128`: Key2 tweak-encrypt of the sector number,

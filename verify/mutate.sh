@@ -21,7 +21,7 @@ mut() {  # name file perl-substitution dir [make args]
   (cd "$dir" && timeout -k 10 "$lim" make "$@") > "$BK/log" 2>&1; rc=$?
   if [[ $rc == 124 || $rc == 137 ]]; then echo "$name: KILLED (wall-clock ${lim}s)"
   elif grep -qs "<failure" "$dir"/results*.xml; then
-    echo "$name: KILLED $(grep -m1 -oE '(AssertionError|SimTimeoutError)[^\"]{0,80}' "$BK/log")"
+    echo "$name: KILLED $(grep -m1 -oE '(AssertionError[:(]|SimTimeoutError)[^\"]{0,80}' "$BK/log")"
   elif ls "$dir"/results*.xml >/dev/null 2>&1; then echo "$name: SURVIVED"; bad=$((bad + 1))
   else echo "$name: ERROR rc=$rc (no results; build failed?)"; tail -5 "$BK/log"; bad=$((bad + 1)); fi
 }
@@ -45,7 +45,7 @@ S='verify TOP=spi sim'
 mut S1_cs_gap_1clk   spi_nor.v 's/gap <= 3.d7;/gap <= 3'"'"'d0;/'    $S
 mut S2_no_wren       spi_nor.v 's/\? G_WREN : G_END/? G_MAIN : G_END/' $S
 mut S3_ignore_wip    spi_nor.v 's/if \(rx\[0\]\)/if (1'"'"'b0)/'     $S
-mut S4_addr_order    spi_nor.v 's/\{opc, addr_q\}/{opc, addr_q[7:0], addr_q[15:8], addr_q[23:16]}/' $S
+mut S4_addr_order    spi_nor.v 's/\? addr_q\[23:16\] :/? addr_q[7:0] :/; s/: addr_q\[7:0\];/: addr_q[23:16];/' $S
 mut S5_no_rvalid     spi_nor.v 's/if \(!rvalid\) begin send/if (1'"'"'b1) begin send/' $S
 # top: host protocol and erase domain (pin-level e2e, cocotb 2)
 T=tt_um_cryptkill.v
