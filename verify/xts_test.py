@@ -69,7 +69,7 @@ IEEE_VECTORS = [  # (key1, key2, seq, pt, ct) -- IEEE 1619-2007 XTS-AES-128 #1, 
      "c454185e6a16936e39334038acef838bfb186fff7480adc4289382ecd6d394f0"),
 ]
 
-@cocotb.test()
+@cocotb.test(timeout_time=200, timeout_unit="us")
 async def test_xts_ieee1619(dut):
     await reset(dut)
     for n, (k1, k2, seq, pt, ct) in enumerate(IEEE_VECTORS, 1):
@@ -80,7 +80,7 @@ async def test_xts_ieee1619(dut):
         assert back == pt, f"IEEE vec#{n} dec: {back.hex()}"
     dut._log.info("XTS: IEEE-1619 vectors #1/#2 enc+dec PASS")
 
-@cocotb.test()
+@cocotb.test(timeout_time=4, timeout_unit="ms")
 async def test_xts_random(dut):
     await reset(dut)
     rnd = random.Random(0x1619)
@@ -125,7 +125,7 @@ async def run_sector_greedy(dut, data, key1, key2, seq, encrypt):
         await FallingEdge(dut.clk)
     raise AssertionError("timeout in greedy sector")
 
-@cocotb.test()
+@cocotb.test(timeout_time=1, timeout_unit="ms")
 async def test_xts_back_to_back(dut):
     await reset(dut)
     rnd = random.Random(0xB2B)
@@ -151,7 +151,7 @@ def secrets_nonzero(dut):
             "core.rk": x.core.rk, "core.st": x.core.st, "core.dout": x.core.dout}
     return [n for n in SECRETS if int(vals[n].value) != 0]
 
-@cocotb.test()
+@cocotb.test(timeout_time=500, timeout_unit="us")
 async def test_xts_tamper_erase(dut):
     """Crypto-erase: TAMPER mid-operation zeroes keys, T, core rk/st/dout and
     aborts the op; the same ciphertext then decrypts to garbage until the key

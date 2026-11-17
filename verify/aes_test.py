@@ -25,7 +25,7 @@ async def run_block(dut, key: bytes, din: bytes, dec: int) -> bytes:
             return got.to_bytes(16, "big")
     raise AssertionError("timeout waiting for done")
 
-@cocotb.test()
+@cocotb.test(timeout_time=1000, timeout_unit="us")
 async def test_aes_kat(dut):
     cocotb.start_soon(Clock(dut.clk, 10, units="ns").start())
     dut.rst_n.value = 0
@@ -52,7 +52,7 @@ async def test_aes_kat(dut):
     dut._log.info("AES-128 core: FIPS KAT + 32 random enc/dec vectors PASS")
 
 
-@cocotb.test()
+@cocotb.test(timeout_time=200, timeout_unit="us")
 async def test_aes_fsm_edges(dut):
     """Byte-serial FSM control: exact latency, inputs latched at start, start
     ignored while busy, held start = one op, start on the cycle after done."""

@@ -98,7 +98,7 @@ def secrets(dut):
     return [n for n, h in regs.items() if int(h.value) != 0]
 
 
-@cocotb.test()
+@cocotb.test(timeout_time=25, timeout_unit="ms")
 async def test_cryptkill_e2e(dut):
     """Load key, write a sector, check flash holds the XTS ciphertext, read it back,
     then TAMPER: key gone, data unreadable, correct key restores it."""

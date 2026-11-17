@@ -52,7 +52,7 @@ async def run_op(dut, op, addr, n=0, wdata=b"", rnd=None, p=1.0, start_cycles=1)
     raise AssertionError(f"timeout op={op} addr={addr:06x} n={n}")
 
 
-@cocotb.test()
+@cocotb.test(timeout_time=100, timeout_unit="us")
 async def test_spi_wire_format(dut):
     """Exact command bytes on the wire (KAT) + basic read/program/erase."""
     flash = await setup(dut, 1)
@@ -76,7 +76,7 @@ async def test_spi_wire_format(dut):
     dut._log.info("SPI: wire-format KAT PASS")
 
 
-@cocotb.test()
+@cocotb.test(timeout_time=40, timeout_unit="ms")
 async def test_spi_random(dut):
     """Random erase/program/read with random backpressure vs an independent image."""
     flash = await setup(dut, 2)
@@ -112,7 +112,7 @@ async def test_spi_random(dut):
     dut._log.info("SPI: 60 random ops + full readback with backpressure PASS")
 
 
-@cocotb.test()
+@cocotb.test(timeout_time=200, timeout_unit="us")
 async def test_spi_edges(dut):
     flash = await setup(dut, 3, busy_max=0)
     # len=0 PROGRAM and op 3: done, no flash traffic at all
