@@ -6,6 +6,8 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge, FallingEdge
 
+CYC = 400   # > byte-serial core latency (enc 248, dec 289 clk)
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "model"))
 from aes_xts_ref import xts_crypt  # noqa: E402
 
@@ -16,7 +18,7 @@ async def pulse(dut, sig):
     await RisingEdge(dut.clk)
 
 async def wait_idle(dut):
-    for _ in range(64):
+    for _ in range(CYC):
         if int(dut.busy.value) == 0:
             return
         await RisingEdge(dut.clk)
@@ -36,7 +38,7 @@ async def run_sector(dut, data: bytes, key1: bytes, key2: bytes, seq: int, encry
         dut.blk_start.value = 1
         await RisingEdge(dut.clk)
         dut.blk_start.value = 0
-        for _ in range(64):
+        for _ in range(CYC):
             await RisingEdge(dut.clk)
             if int(dut.done.value) == 1:
                 break
@@ -104,7 +106,7 @@ async def run_sector_greedy(dut, data, key1, key2, seq, encrypt):
     dut.tweak_start.value = 0
     blocks = [data[j:j+16] for j in range(0, len(data), 16)]
     out, sent = b"", 0
-    for _ in range(64 * (len(blocks) + 1)):
+    for _ in range(CYC * (len(blocks) + 1)):
         if int(dut.done.value) == 1:
             out += int(dut.dout.value).to_bytes(16, "big")
             if len(out) == len(data):
