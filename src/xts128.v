@@ -8,13 +8,23 @@
 //                 dout stays valid until the next blk_start is accepted.
 // T advances by alpha lazily, when the *next* block is accepted, so dout can be
 // aes_dout ^ T combinationally with no extra 128-bit output register.
+//
+// Keys: each clk with key_wr high (ignored while busy) shifts key_byte into
+// {key1,key2}; 32 writes load the 256-bit XTS key in IEEE-1619 order (key1 byte 0
+// first). Loading mid-sector is the caller's problem (tweak/blocks use live keys).
+// CRYPTO-ERASE: tamper (2-FF synchronized) holds the whole wrapper + aes128 core in
+// reset: key1, key2, T, core rk/st/dout and all control state read 0 within 2 clk
+// of tamper being sampled high, regardless of start/busy/mode, and stay 0 while it
+// is high. shortcut: synchronous sampling (needs a running clk, pulse >= 1 clk);
+// hardened upgrade = clock-independent async erase.
 `default_nettype none
 
 module xts128 (
     input  wire         clk,
     input  wire         rst_n,
-    input  wire [127:0] key1,      // data key
-    input  wire [127:0] key2,      // tweak key
+    input  wire         tamper,    // async pin, active high: erase all key material
+    input  wire         key_wr,
+    input  wire [7:0]   key_byte,
     input  wire [127:0] sector,    // data-unit number, plain integer
     input  wire         tweak_start,
     input  wire         blk_start,
@@ -33,6 +43,13 @@ module xts128 (
     v = bswap(t);
     alpha = bswap({v[126:0], 1'b0} ^ (v[127] ? 128'h87 : 128'h0)); end endfunction
 
+  // tamper synchronizer is the only state outside the erase domain
+  reg  [1:0]   tsync;
+  always @(posedge clk or negedge rst_n)
+    if (!rst_n) tsync <= 2'b00; else tsync <= {tsync[0], tamper};
+  wire rst_e = rst_n & ~tsync[1];   // erase domain reset: driven by a flop, glitch-free
+
+  reg  [127:0] key1, key2;          // data key, tweak key
   reg  [127:0] T;
   reg          blk_phase, adv, req_d;
   wire [127:0] a_dout;
@@ -46,7 +63,7 @@ module xts128 (
   wire [127:0] T_cur = adv ? alpha(T) : T_new;   // tweak for the block being accepted
 
   aes128 core (
-    .clk(clk), .rst_n(rst_n), .start(accept),
+    .clk(clk), .rst_n(rst_e), .start(accept),
     .dec(is_tw ? 1'b0 : dec),
     .key(is_tw ? key2 : key1),
     .din(is_tw ? bswap(sector) : din ^ T_cur),
@@ -56,11 +73,12 @@ module xts128 (
   assign dout = a_dout ^ T;
   assign done = a_done & blk_phase;
 
-  always @(posedge clk or negedge rst_n) begin
-    if (!rst_n) begin
-      T <= 0; blk_phase <= 0; adv <= 0; req_d <= 0;
+  always @(posedge clk or negedge rst_e) begin
+    if (!rst_e) begin
+      key1 <= 0; key2 <= 0; T <= 0; blk_phase <= 0; adv <= 0; req_d <= 0;
     end else begin
       req_d <= req;
+      if (key_wr & ~busy) {key1, key2} <= {key1[119:0], key2, key_byte};
       if (accept) begin
         blk_phase <= ~is_tw;
         if (is_tw) adv <= 1'b0;

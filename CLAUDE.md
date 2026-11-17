@@ -7,7 +7,7 @@ continuing this project in any fresh session (Claude Code or chat).
 A self-encrypting storage controller for TinyTapeout (open-source SKY130 ASIC).
 It transparently encrypts every byte written to a commodity SPI-NOR flash under
 a key held only on-die, and its headline feature is **hardware crypto-erase**:
-a TAMPER pin zeroizes the key register in one clock, so the flash contents
+a TAMPER pin zeroizes all key material within 2 clocks, so the flash contents
 become permanently unrecoverable in microseconds. Target audience:
 military / cyber data-at-rest. Framing: an honest, inspectable *demonstrator*
 of key-binding + instant crypto-erase using standard AES — not a certified
@@ -23,7 +23,7 @@ product. Do NOT roll custom crypto; standard AES only.
 - Storage: SPI NOR flash (W25Q-class), controller = SPI master.
 - Host / test driver: RP2040 on the TT demo board drives the pins; key loaded
   via a protected command (UART-style) at power-up.
-- Crypto-erase: a TAMPER input pin clears BOTH key registers in 1 clock.
+- Crypto-erase: a TAMPER input pin clears BOTH keys + all key-derived state (2 clk, sync).
 - Device-bind (stretch, later): `effective_key = key XOR H(device_id)` where
   device_id is strapped on spare pins — deterministic, simulable. A real RO-PUF
   is a silicon-only upgrade path, never a demo dependency (can't verify pre-fab).
@@ -43,7 +43,7 @@ product. Do NOT roll custom crypto; standard AES only.
   (fixed KATs + randomized vectors).
 
 ## Status
-- DONE: `src/aes128.v` � byte-serial AES-128, encrypt **and** decrypt, on-the-fly
+- DONE: `src/aes128.v` — byte-serial AES-128, encrypt **and** decrypt, on-the-fly
   key schedule. One forward + one inverse LUT S-box shared by the whole datapath
   (state SubBytes 1 byte/clk with AddRoundKey fused, key schedule 1 byte/clk),
   one MixColumns column network (InvMixColumns = MixColumns(imc_pre(col))).
@@ -66,6 +66,27 @@ product. Do NOT roll custom crypto; standard AES only.
   IEEE-1619 #1/#2 enc+dec + 12 random sectors (1..32 blocks, full 128-bit seq)
   vs `xts_crypt`, plus a back-to-back test that starts each block on the cycle
   `busy` drops (the tweak result is bypassed into a block accepted that cycle).
+- DONE: key registers + CRYPTO-ERASE (in `src/xts128.v`). Key1/Key2 live inside
+  xts128; each clk with `key_wr` high (ignored while busy) shifts `key_byte` into
+  {key1,key2}, so 32 writes load the 256-bit XTS key in IEEE-1619 order (key1
+  byte 0 first) -- fits a byte-wide host protocol in TODO #4. `tamper` goes
+  through a 2-FF synchronizer whose output drives the async reset of ONE erase
+  domain (`rst_e = rst_n & ~tsync[1]`): key1, key2, T, the whole aes128 core
+  (rk, st, dout, FSM) and all xts control state. Erased within 2 clk of tamper
+  being sampled high, regardless of start/busy/mode; held while tamper is high
+  (key loads ignored); the in-flight op is aborted (no done). Only the
+  synchronizer flops are outside the domain. Verified by `test_xts_tamper_erase`:
+  KAT before, tamper during a tweak / mid-block / late in a dec block, every
+  secret register (key1, key2, T, core.rk/st/dout) reads 0, no done afterwards,
+  the same ciphertext then decrypts to garbage (== decrypt under the all-zero
+  key, != plaintext), key load ignored during tamper, reload restores the KAT.
+  Mutation-checked: dropping any one of key1/key2/T/rk/st/dout from the erase,
+  wiring the core to plain rst_n, or not wiring tamper -- all 8 caught, each
+  naming the register left. LIMITS (hardened upgrade, later): erase needs a
+  running clk and a tamper pulse >= 1 clk (synchronous sampling); a
+  clock-independent async erase is the upgrade. Zeroing is a reset to 0, not a
+  multi-pass overwrite; no protection against data remanence or power/probing
+  attacks.
 - DONE: `src/spi_nor.v` — SPI-NOR (W25Q) master, single-bit mode 0, SCK=clk/2.
   Ops: READ(03), PROGRAM(06|02+data|05 poll), ERASE4K(06|20|05 poll), NOP.
   Byte streams: wdata/wvalid/wready (wready pulses the cycle after the byte is
@@ -97,12 +118,12 @@ product. Do NOT roll custom crypto; standard AES only.
    risk = command/timing correctness burned into irreversible silicon. Test
    against a simulated flash model (BFM) first; validate against a real W25Q on
    FPGA before tapeout.
-3. **Key register + TAMPER zeroize**: load path + synchronous 1-clock clear of
-   both keys on the TAMPER pin. Clearing the key registers is NOT enough: the
-   aes128 core keeps `rk` after each op (== Key1 after a decrypt; the round-10
-   key after an encrypt/tweak, which inverts to Key1/Key2), plus `st`/`dout` and the
-   xts128 tweak T. TAMPER must also reset the whole xts128 instance, e.g.
-   `.rst_n(rst_n & ~tamper)`, and the test must check `rk`/T are zero after it.
+3. ~~**Key register + TAMPER zeroize**~~ DONE (see Status). Why the whole
+   domain: the aes128 core keeps `rk` after each op (== Key1 after a decrypt; the
+   round-10 key after an encrypt/tweak, which inverts to Key1/Key2), plus
+   `st`/`dout` and the xts128 tweak T. Any new register in TODO #4 that holds key
+   material must also sit in the erase domain (`rst_e`) and in `SECRETS` of
+   `verify/xts_test.py`.
 4. **Top `tt_um_cryptkill`**: pin/host protocol (shift key/data in over `ui`,
    SPI on `uio`, status on `uo`, TAMPER on a `ui` bit), wire the blocks, set
    `info.yaml` (`tiles: 3x2` already set) + pinout + source_files, write `docs/info.md`.

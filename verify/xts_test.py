@@ -17,6 +17,13 @@ async def pulse(dut, sig):
     sig.value = 0
     await RisingEdge(dut.clk)
 
+async def load_keys(dut, key1: bytes, key2: bytes):
+    """32 key_wr cycles: the 256-bit XTS key, key1 byte 0 first."""
+    for b in key1 + key2:
+        dut.key_byte.value, dut.key_wr.value = b, 1
+        await RisingEdge(dut.clk)
+    dut.key_wr.value = 0
+
 async def wait_idle(dut):
     for _ in range(CYC):
         if int(dut.busy.value) == 0:
@@ -26,8 +33,7 @@ async def wait_idle(dut):
 
 async def run_sector(dut, data: bytes, key1: bytes, key2: bytes, seq: int, encrypt: bool) -> bytes:
     assert len(data) % 16 == 0
-    dut.key1.value = int.from_bytes(key1, "big")
-    dut.key2.value = int.from_bytes(key2, "big")
+    await load_keys(dut, key1, key2)
     dut.sector.value = seq
     await pulse(dut, dut.tweak_start)
     await wait_idle(dut)
@@ -96,8 +102,7 @@ async def test_xts_random(dut):
 async def run_sector_greedy(dut, data, key1, key2, seq, encrypt):
     """Like a real controller: start each request on the first cycle busy is low,
     i.e. on the same cycle the previous done/tweak lands. Drives on falling edges."""
-    dut.key1.value = int.from_bytes(key1, "big")
-    dut.key2.value = int.from_bytes(key2, "big")
+    await load_keys(dut, key1, key2)
     dut.sector.value = seq
     dut.dec.value = 0 if encrypt else 1
     await FallingEdge(dut.clk)
@@ -135,3 +140,75 @@ async def test_xts_back_to_back(dut):
         assert await run_sector_greedy(dut, pt, k1, k2, seq, True) == exp, f"greedy enc #{i}"
         assert await run_sector_greedy(dut, exp, k1, k2, seq, False) == pt, f"greedy dec #{i}"
     dut._log.info("XTS: back-to-back (start on the cycle busy drops) enc+dec PASS")
+
+
+# every register that holds key material, or data derived from it, must read 0
+SECRETS = ["key1", "key2", "T", "core.rk", "core.st", "core.dout"]
+
+def secrets_nonzero(dut):
+    x = dut.dut
+    vals = {"key1": x.key1, "key2": x.key2, "T": x.T,
+            "core.rk": x.core.rk, "core.st": x.core.st, "core.dout": x.core.dout}
+    return [n for n in SECRETS if int(vals[n].value) != 0]
+
+@cocotb.test()
+async def test_xts_tamper_erase(dut):
+    """Crypto-erase: TAMPER mid-operation zeroes keys, T, core rk/st/dout and
+    aborts the op; the same ciphertext then decrypts to garbage until the key
+    is reloaded; key loads are ignored while TAMPER is held."""
+    await reset(dut)
+    k1, k2, seq, pt, ct = IEEE_VECTORS[1]
+    k1, k2, pt, ct = map(bytes.fromhex, (k1, k2, pt, ct))
+    rnd = random.Random(0x7A)
+
+    for when in (5, 100, 260):           # tamper during tweak, mid-block, late in a dec block
+        assert await run_sector(dut, pt, k1, k2, seq, True) == ct, "known-answer before tamper"
+        dut.sector.value = seq
+        await pulse(dut, dut.tweak_start)
+        await wait_idle(dut)
+        dut.din.value, dut.dec.value = int.from_bytes(ct[:16], "big"), 1
+        await pulse(dut, dut.blk_start)
+        for _ in range(when):
+            await RisingEdge(dut.clk)
+        assert int(dut.busy.value) == 1 and secrets_nonzero(dut), "op should be in flight"
+        dut.tamper.value = 1             # single-cycle pulse, async to the op
+        await RisingEdge(dut.clk)
+        dut.tamper.value = 0
+        for _ in range(2):               # 2-FF synchronizer -> erased within 2 clk
+            await RisingEdge(dut.clk)
+        await FallingEdge(dut.clk)
+        left = secrets_nonzero(dut)
+        assert not left, f"tamper@{when}: not erased: {left}"
+        assert int(dut.busy.value) == 0 and int(dut.dout.value) == 0
+        for _ in range(CYC):             # aborted op never completes
+            await RisingEdge(dut.clk)
+            assert int(dut.done.value) == 0, "done after tamper"
+        assert not secrets_nonzero(dut)
+
+        # no reload: decrypting the same sector must NOT give the plaintext
+        dut.sector.value = seq
+        await pulse(dut, dut.tweak_start)
+        await wait_idle(dut)
+        got = b""
+        for j in range(0, len(ct), 16):
+            dut.din.value, dut.dec.value = int.from_bytes(ct[j:j+16], "big"), 1
+            await pulse(dut, dut.blk_start)
+            while not int(dut.done.value):
+                await RisingEdge(dut.clk)
+            got += int(dut.dout.value).to_bytes(16, "big")
+        assert got != pt, "plaintext recovered after crypto-erase"
+        assert got == xts_crypt(ct, bytes(16), bytes(16), seq, encrypt=False), "post-erase key not all-zero"
+
+    # key loads are ignored while tamper is held; erase holds for the whole pulse
+    dut.tamper.value = 1
+    for _ in range(3):
+        await RisingEdge(dut.clk)
+    await load_keys(dut, bytes(rnd.randrange(1, 256) for _ in range(16)), k2)
+    await FallingEdge(dut.clk)
+    assert not secrets_nonzero(dut), "key loaded during tamper"
+    dut.tamper.value = 0
+    for _ in range(3):
+        await RisingEdge(dut.clk)
+    # erase is not permanent: reload -> known answer again
+    assert await run_sector(dut, ct, k1, k2, seq, False) == pt, "reload after tamper"
+    dut._log.info("XTS: TAMPER crypto-erase PASS")
