@@ -108,6 +108,13 @@ product. Do NOT roll custom crypto; standard AES only.
   (gds run on 001908b, 3x2 die 508.76x225.76): core 110.9k um2, effective
   utilization 69.4% after synthesis, 80% at global placement; antenna diode
   insertion then failed (DPL-0036, no room for 42 cells). DECISION: `tiles: "4x2"`.
+  OpenLane 4x2 (gds run on 1d50525, die 680x226 um): GDS + precheck + GL test
+  green. 10374 std cells, 101.0k um2 incl. 18.7k timing-repair buffers, 67.7% of
+  core incl. buffers (51.6% effective after synthesis), 22 antenna diodes, 0 DRC /
+  0 antenna violations, hold clean. Setup at the old CLOCK_PERIOD 20 ns: tt +5.97
+  ns, ss_100C_1v60 -5.38 ns (worst path ~25.4 ns -> ~39 MHz worst corner).
+  clock_hz is 20 MHz, so `src/config.json` CLOCK_PERIOD = 50 ns (STA now checks the
+  declared clock). Max-slew warnings in ss corners remain (TT-typical, not fixed).
 - DONE: `src/tt_um_cryptkill.v` -- top. Pinout (also in info.yaml): ui[7:0] host
   byte; uio0 FLASH_CS_N, uio1 SCK, uio2 MOSI (out), uio3 MISO (in), uio4 HOST_VALID,
   uio5 HOST_CMD (in), uio6 ACK (out), uio7 TAMPER (in); uio_oe = 8'b0100_0111;
