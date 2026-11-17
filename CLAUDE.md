@@ -27,7 +27,7 @@ product. Do NOT roll custom crypto; standard AES only.
 - Device-bind (stretch, later): `effective_key = key XOR H(device_id)` where
   device_id is strapped on spare pins — deterministic, simulable. A real RO-PUF
   is a silicon-only upgrade path, never a demo dependency (can't verify pre-fab).
-- Tiles: **3x2** (AES enc+decrypt + 256-bit key + XTS + SPI); chosen from the
+- Tiles: **4x2** (AES enc+decrypt + 256-bit key + XTS + SPI); chosen from the
   sky130 area estimate below. Shuttle: `ttsky-verilog-template`, TTSKY26d/26e (SKY130).
   Pace: opportunistic for the 2026-11-30 close, otherwise the next shuttle.
   Result > speed.
@@ -104,8 +104,10 @@ product. Do NOT roll custom crypto; standard AES only.
   xts128+aes128 41.0k um2 / 532 FF; spi_nor 4.5k um2 / 88 FF. Still to add:
   Key1+Key2 registers (256 FF, structurally required) + top/host glue, est.
   ~60k um2 total. 2x2 (~72k um2 at 167x108 per tile) would be ~80%+ utilization ->
-  DECISION: `tiles: "3x2"` (~108k um2, ~55%). Full top (tt_um_cryptkill), same
-  Yosys flow: 61.5k um2 / 1043 FF -> 3x2 confirmed pending OpenLane numbers.
+  First pick was 3x2. Full top, same Yosys flow: 61.5k um2 / 1043 FF. OpenLane
+  (gds run on 001908b, 3x2 die 508.76x225.76): core 110.9k um2, effective
+  utilization 69.4% after synthesis, 80% at global placement; antenna diode
+  insertion then failed (DPL-0036, no room for 42 cells). DECISION: `tiles: "4x2"`.
 - DONE: `src/tt_um_cryptkill.v` -- top. Pinout (also in info.yaml): ui[7:0] host
   byte; uio0 FLASH_CS_N, uio1 SCK, uio2 MOSI (out), uio3 MISO (in), uio4 HOST_VALID,
   uio5 HOST_CMD (in), uio6 ACK (out), uio7 TAMPER (in); uio_oe = 8'b0100_0111;
