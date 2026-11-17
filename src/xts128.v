@@ -25,6 +25,7 @@ module xts128 (
     input  wire         tamper,    // async pin, active high: erase all key material
     input  wire         key_wr,
     input  wire [7:0]   key_byte,
+    output wire         erasing,   // synchronized tamper: lets the top join the erase domain
     input  wire [127:0] sector,    // data-unit number, plain integer
     input  wire         tweak_start,
     input  wire         blk_start,
@@ -48,6 +49,7 @@ module xts128 (
   always @(posedge clk or negedge rst_n)
     if (!rst_n) tsync <= 2'b00; else tsync <= {tsync[0], tamper};
   wire rst_e = rst_n & ~tsync[1];   // erase domain reset: driven by a flop, glitch-free
+  assign erasing = tsync[1];
 
   reg  [127:0] key1, key2;          // data key, tweak key
   reg  [127:0] T;

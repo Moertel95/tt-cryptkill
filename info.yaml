@@ -1,56 +1,59 @@
 # Tiny Tapeout project information
 project:
-  title:        ""      # Project title
-  author:       ""      # Your name
+  title:        "CryptKill: AES-XTS flash encryptor with crypto-erase"      # Project title
+  author:       "Moertel95"      # Your name
   discord:      ""      # Your discord username, for communication and automatically assigning you a Tapeout role (optional)
-  description:  ""      # One line description of what your project does
+  description:  "AES-128-XTS self-encrypting SPI-NOR flash controller with hardware TAMPER crypto-erase"      # One line description of what your project does
   language:     "Verilog" # other examples include SystemVerilog, Amaranth, VHDL, etc
-  clock_hz:     0       # Clock frequency in Hz (or 0 if not applicable)
+  clock_hz:     20000000       # Clock frequency in Hz (or 0 if not applicable)
 
   # How many tiles your design occupies? A single tile is about 167x108 uM.
   tiles: "3x2"          # Valid values: 1x1, 1x2, 2x2, 3x2, 4x2, 6x2 or 8x2
 
   # Your top module name must start with "tt_um_". Make it unique by including your github username:
-  top_module:  "tt_um_example"
+  top_module:  "tt_um_cryptkill"
 
   # List your project's source files here.
   # Source files must be in ./src and you must list each source file separately, one per line.
   # Don't forget to also update `PROJECT_SOURCES` in test/Makefile.
   source_files:
-    - "project.v"
+    - "tt_um_cryptkill.v"
+    - "xts128.v"
+    - "aes128.v"
+    - "spi_nor.v"
 
 # The pinout of your project. Leave unused pins blank. DO NOT delete or add any pins.
 # This section is for the datasheet/website. Use descriptive names (e.g., RX, TX, MOSI, SCL, SEG_A, etc.).
 pinout:
   # Inputs
-  ui[0]: ""
-  ui[1]: ""
-  ui[2]: ""
-  ui[3]: ""
-  ui[4]: ""
-  ui[5]: ""
-  ui[6]: ""
-  ui[7]: ""
+  ui[0]: "HOST_D0"
+  ui[1]: "HOST_D1"
+  ui[2]: "HOST_D2"
+  ui[3]: "HOST_D3"
+  ui[4]: "HOST_D4"
+  ui[5]: "HOST_D5"
+  ui[6]: "HOST_D6"
+  ui[7]: "HOST_D7"
 
   # Outputs
-  uo[0]: ""
-  uo[1]: ""
-  uo[2]: ""
-  uo[3]: ""
-  uo[4]: ""
-  uo[5]: ""
-  uo[6]: ""
-  uo[7]: ""
+  uo[0]: "KEY_OK / RD_D0"
+  uo[1]: "SEC_OK / RD_D1"
+  uo[2]: "ERR / RD_D2"
+  uo[3]: "FULL / RD_D3"
+  uo[4]: "ERASING / RD_D4"
+  uo[5]: "RD_D5"
+  uo[6]: "RD_D6"
+  uo[7]: "BUSY / RD_D7"
 
   # Bidirectional pins
-  uio[0]: ""
-  uio[1]: ""
-  uio[2]: ""
-  uio[3]: ""
-  uio[4]: ""
-  uio[5]: ""
-  uio[6]: ""
-  uio[7]: ""
+  uio[0]: "FLASH_CS_N"
+  uio[1]: "FLASH_SCK"
+  uio[2]: "FLASH_MOSI"
+  uio[3]: "FLASH_MISO"
+  uio[4]: "HOST_VALID"
+  uio[5]: "HOST_CMD"
+  uio[6]: "ACK"
+  uio[7]: "TAMPER"
 
 # Do not change!
 yaml_version: 6

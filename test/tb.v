@@ -18,17 +18,19 @@ module tb ();
   reg rst_n;
   reg ena;
   reg [7:0] ui_in;
-  reg [7:0] uio_in;
+  // uio inputs: 3 MISO (driven by the flash model), 4 HOST_VALID, 5 HOST_CMD, 7 TAMPER
+  reg miso, host_valid, host_cmd, tamper;
+  wire [7:0] uio_in = {tamper, 1'b0, host_cmd, host_valid, miso, 3'b0};
   wire [7:0] uo_out;
   wire [7:0] uio_out;
   wire [7:0] uio_oe;
+  wire cs_n = uio_out[0], sck = uio_out[1], mosi = uio_out[2], ack = uio_out[6];
 `ifdef GL_TEST
   wire VPWR = 1'b1;
   wire VGND = 1'b0;
 `endif
 
-  // Replace tt_um_example with your module name:
-  tt_um_example user_project (
+  tt_um_cryptkill user_project (
 
       // Include power ports for the Gate Level test:
 `ifdef GL_TEST

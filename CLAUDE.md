@@ -104,7 +104,35 @@ product. Do NOT roll custom crypto; standard AES only.
   xts128+aes128 41.0k um2 / 532 FF; spi_nor 4.5k um2 / 88 FF. Still to add:
   Key1+Key2 registers (256 FF, structurally required) + top/host glue, est.
   ~60k um2 total. 2x2 (~72k um2 at 167x108 per tile) would be ~80%+ utilization ->
-  DECISION: `tiles: "3x2"` (~108k um2, ~55%). Re-check after TODO #4 synthesis.
+  DECISION: `tiles: "3x2"` (~108k um2, ~55%). Full top (tt_um_cryptkill), same
+  Yosys flow: 61.5k um2 / 1043 FF -> 3x2 confirmed pending OpenLane numbers.
+- DONE: `src/tt_um_cryptkill.v` -- top. Pinout (also in info.yaml): ui[7:0] host
+  byte; uio0 FLASH_CS_N, uio1 SCK, uio2 MOSI (out), uio3 MISO (in), uio4 HOST_VALID,
+  uio5 HOST_CMD (in), uio6 ACK (out), uio7 TAMPER (in); uio_oe = 8'b0100_0111;
+  uo = status {BUSY,0,0,ERASING,FULL,ERR,SEC_OK,KEY_OK}, or plaintext bytes during
+  READ_BLOCK output. Host protocol: 4-phase byte handshake (VALID up -> ACK up
+  when the byte AND any flash/AES work it started is done -> VALID down -> ACK
+  down); HOST_VALID is 2-FF synchronized, ui/HOST_CMD must be stable while VALID
+  is high. Commands 01 LOAD_KEY+32B (idle only; clears KEY_OK+SEC_OK, so a
+  mid-sector key change forces SET_SECTOR), 02 SET_SECTOR+2B (15-bit n, needs
+  KEY_OK; flash addr n*512), 03 WRITE_BLOCK+16B, 04 READ_BLOCK (16 output
+  handshakes), 05 ERASE (4 KB holding n, needs SEC_OK). Block ops need SEC_OK and
+  j<32, sequential within a 512 B sector. Rejected bytes are ACKed and set ERR.
+  The whole top (FSM, 128-bit block buffer, flags, SPI master) is in the erase
+  domain (rst_e from xts128's `erasing`); only the VALID and TAMPER synchronizers
+  are outside. No new register holds key material (key bytes go ui -> xts key
+  shift register combinationally). Verified by `test/test.py` (cocotb 2.1, pins
+  only, RTL + GL): key load, ERASE, full 32-block sector write, flash contents ==
+  `xts_crypt` ciphertext, readback == plaintext, protocol guards (no key, mid-sector
+  key load, 33rd block, unknown cmd, stray data, cmd mid-data), TAMPER mid-READ
+  (secrets incl. buf_q == 0 in RTL, status 0, CS high), then refused, wrong key ->
+  garbage == model decrypt, correct key -> plaintext again. GL run uses 2 blocks.
+  Mutation-checked: 10 top-level bugs all caught. Verilator -Wall lint clean.
+  The flash model now ends a transaction when CS rises during tCLQV (a tamper
+  reset raises CS and drops SCK on the same edge).
+- Top-level sim: WSL `source ~/.venv-cocotb2/bin/activate` (cocotb 2.1), `cd test
+  && make` (RTL); `verify/` stays on cocotb 1.9.2. Shared flash model:
+  `verify/flash_model.py`.
 - `make -C verify` runs every suite (`TOP=aes|xts sim` for one) and FAILS if any
   results_*.xml has a `<failure>` (cocotb's make alone exits 0 on test failure).
 - Local sim: WSL kali-linux, `source ~/.venv-cocotb/bin/activate` (cocotb 1.9.2,
@@ -124,11 +152,11 @@ product. Do NOT roll custom crypto; standard AES only.
    `st`/`dout` and the xts128 tweak T. Any new register in TODO #4 that holds key
    material must also sit in the erase domain (`rst_e`) and in `SECRETS` of
    `verify/xts_test.py`.
-4. **Top `tt_um_cryptkill`**: pin/host protocol (shift key/data in over `ui`,
-   SPI on `uio`, status on `uo`, TAMPER on a `ui` bit), wire the blocks, set
-   `info.yaml` (`tiles: 3x2` already set) + pinout + source_files, write `docs/info.md`.
-   Then fix the `gds` workflow (it and `docs` currently fail — they fail on the
-   pristine template too, i.e. pre-existing; address at integration/submission).
+4. ~~**Top `tt_um_cryptkill`**~~ DONE (see Status). gds/docs failed only because
+   info.yaml title/author/description were empty (template); filled in.
+5. **Next**: read OpenLane area/utilization/STA from the gds run; validate on a
+   real W25Q + RP2040 (pad timing: MISO round trip, clk <= 20-25 MHz); optional
+   async (clock-independent) erase; composite-field S-box if area is needed.
 
 ## Conventions
 - Keep all S-box / algorithm constants sourced from the golden model — never
